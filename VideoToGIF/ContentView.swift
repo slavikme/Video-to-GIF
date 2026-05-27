@@ -3,16 +3,16 @@ import SwiftUI
 /// Represents the current state of the application
 enum AppState: Equatable {
     case idle
-    case converting(inputURL: URL, progress: Double)
+    case converting(inputURL: URL, progress: Double, statusMessage: String)
     case completed(outputURL: URL)
     case error(message: String, fullOutput: String)
-    
+
     static func == (lhs: AppState, rhs: AppState) -> Bool {
         switch (lhs, rhs) {
         case (.idle, .idle):
             return true
-        case let (.converting(lURL, lProgress), .converting(rURL, rProgress)):
-            return lURL == rURL && lProgress == rProgress
+        case let (.converting(lURL, lProgress, lMsg), .converting(rURL, rProgress, rMsg)):
+            return lURL == rURL && lProgress == rProgress && lMsg == rMsg
         case let (.completed(lURL), .completed(rURL)):
             return lURL == rURL
         case let (.error(lMsg, lOut), .error(rMsg, rOut)):
@@ -52,10 +52,11 @@ struct ContentView: View {
                 case .idle:
                     DropZoneView(onVideoSelected: startConversion)
                     
-                case .converting(let inputURL, let progress):
+                case .converting(let inputURL, let progress, let statusMessage):
                     ConversionView(
                         inputURL: inputURL,
                         progress: progress,
+                        statusMessage: statusMessage,
                         onCancel: cancelConversion
                     )
                     
@@ -113,18 +114,22 @@ struct ContentView: View {
     /// Start converting a video file
     private func startConversion(inputURL: URL) {
         currentInputURL = inputURL
-        appState = .converting(inputURL: inputURL, progress: 0)
-        
+        appState = .converting(inputURL: inputURL, progress: 0, statusMessage: "Preparing…")
+
         let outputDirectory = settings.outputDirectory(for: inputURL)
         let outputURL = FileNaming.uniqueOutputURL(for: inputURL, in: outputDirectory)
-        
+
         Task {
             do {
                 let result = try await converter.convert(
                     input: inputURL,
                     output: outputURL
                 ) { progress in
-                    self.appState = .converting(inputURL: inputURL, progress: progress.percentage)
+                    self.appState = .converting(
+                        inputURL: inputURL,
+                        progress: progress.percentage,
+                        statusMessage: progress.statusMessage
+                    )
                 }
                 appState = .completed(outputURL: result)
             } catch let error as ConversionError {

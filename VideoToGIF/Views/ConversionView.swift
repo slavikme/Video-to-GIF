@@ -4,10 +4,13 @@ import SwiftUI
 struct ConversionView: View {
     /// The input video file being converted
     let inputURL: URL
-    
+
     /// Current conversion progress (0.0 to 1.0)
     let progress: Double
-    
+
+    /// Human-readable status (e.g. "Downloading FFmpeg… 42%", "Converting to GIF…")
+    let statusMessage: String
+
     /// Callback when cancel is requested
     let onCancel: () -> Void
     
@@ -38,10 +41,11 @@ struct ConversionView: View {
             
             // File info and status
             VStack(spacing: 12) {
-                Text("Converting to GIF...")
+                Text(statusMessage)
                     .font(.title2)
                     .fontWeight(.medium)
-                
+                    .multilineTextAlignment(.center)
+
                 Text(FileNaming.displayName(for: inputURL))
                     .font(.body)
                     .foregroundColor(.secondary)
@@ -80,6 +84,7 @@ struct ConversionView: View {
     ConversionView(
         inputURL: URL(fileURLWithPath: "/Users/test/video.mov"),
         progress: 0.45,
+        statusMessage: "Converting to GIF…",
         onCancel: {}
     )
     .frame(width: 400, height: 350)

@@ -12,6 +12,14 @@ struct ConversionProgress {
     let percentage: Double   // 0.0 to 1.0
     let currentTime: Double  // Current time in seconds
     let totalDuration: Double // Total duration in seconds
+    let statusMessage: String
+
+    init(percentage: Double, currentTime: Double = 0, totalDuration: Double = 0, statusMessage: String = "Converting to GIF…") {
+        self.percentage = percentage
+        self.currentTime = currentTime
+        self.totalDuration = totalDuration
+        self.statusMessage = statusMessage
+    }
 }
 
 /// Represents video metadata extracted from FFmpeg
@@ -49,49 +57,52 @@ class GifConverter: ObservableObject {
         }
     }
     
-    /// Get the path to the bundled FFmpeg binary
-    private func ffmpegPath() -> String? {
-        // First try bundled version
-        if let bundledPath = Bundle.main.path(forResource: "ffmpeg", ofType: nil) {
-            return bundledPath
+    /// Locate an already-installed ffmpeg without triggering a download.
+    /// Order: the installer's cache path, then dev fallbacks (Homebrew).
+    private func locallyAvailableFfmpegPath() -> String? {
+        if let url = FfmpegInstaller.installedURL() {
+            return url.path
         }
-        // Fallback to system ffmpeg for development
-        let systemPaths = ["/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"]
-        for path in systemPaths {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
+        for path in ["/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"]
+        where FileManager.default.isExecutableFile(atPath: path) {
+            return path
         }
         return nil
     }
-    
-    /// Get the path to ffprobe (or use ffmpeg with -i for probing)
-    private func ffprobePath() -> String? {
-        // First try bundled version
-        if let bundledPath = Bundle.main.path(forResource: "ffprobe", ofType: nil) {
-            return bundledPath
+
+    /// Return a usable ffmpeg path, downloading + installing it first if needed.
+    /// `progressHandler` receives install progress updates only when a download is required.
+    private func ensureFfmpeg(
+        progressHandler: @escaping (ConversionProgress) -> Void
+    ) async throws -> String {
+        if let existing = locallyAvailableFfmpegPath() {
+            return existing
         }
-        // Fallback to system ffprobe for development
-        let systemPaths = ["/usr/local/bin/ffprobe", "/opt/homebrew/bin/ffprobe"]
-        for path in systemPaths {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
+        addDebugLog("FFmpeg not found locally — downloading bundled build…")
+        do {
+            let url = try await FfmpegInstaller.install { [weak self] update in
+                self?.addDebugLog(update.message)
+                progressHandler(ConversionProgress(
+                    percentage: update.fraction,
+                    statusMessage: update.message
+                ))
             }
+            addDebugLog("FFmpeg installed at \(url.path)")
+            return url.path
+        } catch let error as FfmpegInstallerError {
+            throw ConversionError(
+                message: error.errorDescription ?? "FFmpeg installation failed.",
+                fullOutput: "FfmpegInstaller error: \(error)"
+            )
         }
-        return nil
     }
     
     /// Probe video to get its metadata (width, height, frame rate)
-    /// - Parameter inputURL: URL of the video file
+    /// - Parameters:
+    ///   - inputURL: URL of the video file
+    ///   - ffmpegPath: Resolved ffmpeg binary path (caller is responsible for ensuring it exists)
     /// - Returns: VideoMetadata containing the video's properties
-    func probeVideo(at inputURL: URL) async throws -> VideoMetadata {
-        guard let ffmpeg = ffmpegPath() else {
-            throw ConversionError(
-                message: "FFmpeg not found.",
-                fullOutput: "Could not locate ffmpeg binary."
-            )
-        }
-        
+    func probeVideo(at inputURL: URL, ffmpegPath ffmpeg: String) async throws -> VideoMetadata {
         addDebugLog("Probing video metadata...")
         
         // Use ffmpeg -i to get video info (outputs to stderr)
@@ -161,22 +172,20 @@ class GifConverter: ObservableObject {
     ) async throws -> URL {
         isCancelled = false
         debugOutput = []
-        
-        guard let ffmpeg = ffmpegPath() else {
-            throw ConversionError(
-                message: "FFmpeg not found. Please ensure FFmpeg is bundled with the application.",
-                fullOutput: "Could not locate ffmpeg binary in bundle or system paths."
-            )
-        }
-        
+
+        let ffmpeg = try await ensureFfmpeg(progressHandler: progressHandler)
+
+        // Reset progress to 0 before the conversion phase, with a fresh status message.
+        progressHandler(ConversionProgress(percentage: 0, statusMessage: "Converting to GIF…"))
+
         addDebugLog("Starting conversion...")
         addDebugLog("Input: \(inputURL.path)")
         addDebugLog("Output: \(outputURL.path)")
-        
+
         // Probe video to get original properties
         let metadata: VideoMetadata
         do {
-            metadata = try await probeVideo(at: inputURL)
+            metadata = try await probeVideo(at: inputURL, ffmpegPath: ffmpeg)
         } catch {
             // If probing fails, use sensible defaults
             addDebugLog("Warning: Could not probe video metadata, using defaults")
