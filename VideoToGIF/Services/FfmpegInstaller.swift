@@ -26,9 +26,20 @@ struct FfmpegInstallProgress {
 }
 
 enum FfmpegInstaller {
+    // Source resolves at compile time per Mach-O slice. arm64 and x86_64 slices
+    // ship as separate apps (no universal binary), so each one carries exactly
+    // one URL + SHA-256.
+    #if arch(arm64)
     static let downloadURL = URL(string: "https://www.osxexperts.net/ffmpeg81arm.zip")!
     static let expectedBinarySHA256 = "9a08d61f9328e8164ba560ee7a79958e357307fcfeea6fe626b7d66cdc287028"
     static let ffmpegVersion = "8.1-arm64"
+    #elseif arch(x86_64)
+    static let downloadURL = URL(string: "https://evermeet.cx/ffmpeg/ffmpeg-8.1.1.zip")!
+    static let expectedBinarySHA256 = "3a0ea97adddecfbf87b865da3bcbb321edfce4bab18a98ae1ba4ba9f0bd1f93a"
+    static let ffmpegVersion = "8.1.1-x86_64"
+    #else
+    #error("Unsupported architecture for FfmpegInstaller")
+    #endif
 
     static func installedURL() -> URL? {
         let url = expectedInstallURL

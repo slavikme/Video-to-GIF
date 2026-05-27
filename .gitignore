@@ -16,6 +16,7 @@ xcuserdata/
 
 ## Xcode build directories
 build/
+build-*/
 DerivedData/
 
 ## Obj-C/Swift specific
