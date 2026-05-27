@@ -57,26 +57,16 @@ class GifConverter: ObservableObject {
         }
     }
     
-    /// Locate an already-installed ffmpeg without triggering a download.
-    /// Order: the installer's cache path, then dev fallbacks (Homebrew).
-    private func locallyAvailableFfmpegPath() -> String? {
-        if let url = FfmpegInstaller.installedURL() {
-            return url.path
-        }
-        for path in ["/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"]
-        where FileManager.default.isExecutableFile(atPath: path) {
-            return path
-        }
-        return nil
-    }
-
-    /// Return a usable ffmpeg path, downloading + installing it first if needed.
+    /// Return a usable ffmpeg path, downloading + installing it to the app's
+    /// Application Support storage on first use. We intentionally do not look
+    /// at the host's Homebrew/system ffmpeg — the app must behave the same
+    /// regardless of what the user has installed elsewhere.
     /// `progressHandler` receives install progress updates only when a download is required.
     private func ensureFfmpeg(
         progressHandler: @escaping (ConversionProgress) -> Void
     ) async throws -> String {
-        if let existing = locallyAvailableFfmpegPath() {
-            return existing
+        if let url = FfmpegInstaller.installedURL() {
+            return url.path
         }
         addDebugLog("FFmpeg not found locally — downloading bundled build…")
         do {
